@@ -1,0 +1,190 @@
+---
+title: "Assignment 3"
+topic: NYPD Shooting Incidents
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+```
+
+
+This assignment is about NYPD Shooting Incidents. This data is the breakdown of incidents that took place back in 2006. Each record has data about the shooting incidents that includes information about the event, location, and the time of occurrence.
+
+## Step 1: Import Data
+```{r importData}
+url_in <-"https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+csv_data <- read.csv(url_in)
+summary(csv_data)
+
+csv_data$OCCUR_DATE <- lubridate::mdy(csv_data$OCCUR_DATE, tz = "EST")
+csv_data$OCCUR_TIME <- hms::hms(lubridate::hms(csv_data$OCCUR_TIME))
+csv_data$STATISTICAL_MURDER_FLAG <- as.logical(csv_data$STATISTICAL_MURDER_FLAG)
+summary(csv_data)
+
+```
+
+
+
+## Step 2: Data cleaning and transformation
+
+Here, I would like to see incidents over the years and determine if the incidents increased or decreased the fatality rate. To run the data in a way where I can determine the death, I will need to nullify or remove some records to gather the correct data. Let's go ahead and eliminate
+PRECINCT, JURISDICTION_CODE, X_COORD_CD, Y_COORD_CD, Lon_Lat.
+
+```{r DropCols, echo=TRUE}
+csv_data <- dplyr::select(csv_data, -c(INCIDENT_KEY, OCCUR_TIME, JURISDICTION_CODE,
+                                LOCATION_DESC, PERP_AGE_GROUP, PERP_SEX, PERP_RACE,
+                                VIC_AGE_GROUP, VIC_SEX, VIC_RACE, X_COORD_CD, Y_COORD_CD,
+                                Latitude, Longitude, Lon_Lat))
+summary(csv_data)
+```
+
+As my next step, I would filter the see each month and year to analyze in detail. To achieve that, I will be creating various data frames.
+
+- How many incidents occurred in a year?
+- How many incidents occurred in a month?
+
+```{r MassageData, echo = TRUE}
+
+csv_data <- add_column(csv_data, tibble(MONTH = lubridate::month(csv_data$OCCUR_DATE),
+                                        YEAR = lubridate::year(csv_data$OCCUR_DATE))) %>%
+dplyr:: select(-c(OCCUR_DATE))
+p_monthly_incidents <- tibble(BORO = csv_data$BORO, PRECINCT = csv_data$PRECINCT,
+                              DATE = lubridate::make_date(csv_data$YEAR, csv_data$MONTH))
+p_monthly_incidents <- p_monthly_incidents %>% count(BORO, PRECINCT, DATE) %>%
+                       rename(INCIDENTS = n)
+p_yearly_incidents <- tibble(BORO = csv_data$BORO, PRECINCT = csv_data$PRECINCT,
+                             YEAR = csv_data$YEAR)
+p_yearly_incidents <- p_yearly_incidents %>% count(BORO, PRECINCT, YEAR) %>%
+                      rename(INCIDENTS = n)
+b_monthly_incidents <- tibble(BORO = csv_data$BORO,
+                              DATE = lubridate::make_date(csv_data$YEAR, csv_data$MONTH))
+b_monthly_incidents <- b_monthly_incidents %>% count(BORO, DATE) %>% rename(INCIDENTS = n)
+b_yearly_incidents <- tibble(BORO = csv_data$BORO, YEAR = csv_data$YEAR)
+b_yearly_incidents <- b_yearly_incidents %>% count(BORO, YEAR) %>% rename(INCIDENTS = n)
+```
+
+Months have lower count than years.
+
+```{r CheckData, echo=TRUE}
+print(p_monthly_incidents, n = 5)
+print(p_yearly_incidents, n = 5)
+print(b_monthly_incidents, n = 5)
+print(b_yearly_incidents, n = 5)
+```
+
+This method helps us to view the data easily.
+
+
+## Step 3: Add Data Visualizations
+
+We will start creating visualizations for precincts using different statistical concepts such as mean, median, variance, and standard deviation. 
+
+```{r statsP, echo = TRUE}
+stats_p_monthly <- aggregate(INCIDENTS ~ PRECINCT, p_monthly_incidents,
+                             function(x) c(M = mean(x), SD = sd(x), VAR = var(x)))
+summary(stats_p_monthly)
+mean(p_monthly_incidents$INCIDENTS)
+sd(p_monthly_incidents$INCIDENTS)
+var(p_monthly_incidents$INCIDENTS)
+
+stats_p_yearly <- aggregate(INCIDENTS ~ PRECINCT, p_yearly_incidents,
+                            function(x) c(M = mean(x), SD = sd(x), VAR = var(x)))
+summary(stats_p_yearly)
+mean(p_yearly_incidents$INCIDENTS)
+sd(p_yearly_incidents$INCIDENTS)
+var(p_yearly_incidents$INCIDENTS)
+```
+
+All the incidents vary according to the precinct. The data reflects the monthly and the magnitude of numbers is larger, it’s easier to see the variation. We might get a similar result from Boro.
+
+```{r statsB, echo=TRUE}
+stats_b_monthly <- aggregate(INCIDENTS ~ BORO, b_monthly_incidents,
+                             function(x) c(M = mean(x), SD = sd(x), VAR = var(x)))
+summary(stats_b_monthly)
+mean(b_monthly_incidents$INCIDENTS)
+sd(b_monthly_incidents$INCIDENTS)
+var(b_monthly_incidents$INCIDENTS)
+
+stats_b_yearly <- aggregate(INCIDENTS ~ BORO, b_yearly_incidents,
+                            function(x) c(M = mean(x), SD = sd(x), VAR = var(x)))
+summary(stats_b_yearly)
+mean(b_yearly_incidents$INCIDENTS)
+sd(b_yearly_incidents$INCIDENTS)
+var(b_yearly_incidents$INCIDENTS)
+```
+
+## Visualization 1: 
+A few questions that we need to analyze through the visualiations are
+Question: Which part of NY has more number of incidents?**
+
+```{r}
+g <- ggplot(csv_data, aes(x = BORO)) +
+  geom_bar(fill="#FF7F24") + 
+  labs(title = "Boroughs of New York City",
+       x = "Boroughs of New York City",
+       y = "Count of Incident") +
+  theme_minimal() 
+g
+``` 
+
+```{r}
+table(csv_data$BORO, csv_data$STATISTICAL_MURDER_FLAG)
+```
+
+
+Looking at the above visualization, it seems that Brooklyn is the highest in terms of maximum incidents followed by Bronx, Queens, Manhattan, and Staten Island. Staten Island is the region with the lowest number of incidents according to the data.
+
+## Visualization 2
+
+```{r plotBM, echo=TRUE}
+ggplot(b_yearly_incidents, aes(x=YEAR, y=INCIDENTS)) +
+    geom_line() +
+    geom_point(aes(color = factor(BORO)))
+    labs(title = "Incidents by Month in New York City") +
+  theme_minimal()
+```
+
+Here, Brooklyn has more incidents even though population is not counted yet.
+
+## Model
+
+Building linear regression model to predict the incidents by borough in New York by year?
+
+I will use linear regression model to to predict the incidents by borough in New York by year
+
+Brooklyn shows a significantly higher incident rate. Data by year shows fairly fine grained data. For now, let’s just compute the regression line for each borough.
+
+
+```{r plotFit, echo=TRUE}
+options(warn=-1)
+ggplot(b_yearly_incidents, aes(x=YEAR, y = INCIDENTS, fill = BORO)) + scale_fill_brewer(palette="Spectral") +
+    geom_point() + labs(title = "Incidents by Year in New York City") +
+    geom_smooth(method = "lm", formula = y ~ x + poly(x,4)) +
+  theme_minimal()
+options(warn=1)
+
+```
+
+## Analyze Bias
+
+
+Already identify bias using the data and visualizations. The above chart depicts that Brooklyn has the maximum number of incidents and tells that it is the most dangerous place to stay. 
+Another bias is the lack of location and type of incident information in the original data set. Most incidents didn’t have an attached location and incident details (such as murder, robbery). Also, it can provoke discrimination and create unspoken bias among individuals. It's intriguing to find out that Brooklyn has the most number of incidents, followed by the Bronx and Queens. In addition, there are significantly a huge difference in incidents among victim sex, with more incidents with males than those of females. 
+
+```{r summary, echo=TRUE}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
